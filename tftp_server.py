@@ -1,4 +1,6 @@
 import socket
+import random
+import threading
 
 UDP_IP = "127.0.0.1"
 UDP_PORT = 69 # TFTP Protocol Port (69)
@@ -46,6 +48,35 @@ def get_opcode(bytes):
             pass
     return TFTP_OPCODES[opcode]
 
+# Find a random port between 1025 and 65535 that is not in use
+# by this service
+def get_random_port():
+    while True:
+        port = random.randint(1025, 65536)
+        if(port not in STATE.keys()):
+            return port
+
+
+def create_udp_socket(ip=UDP_IP, port=UDP_PORT):
+    sock = socket.socket(socket.AF_INET,   # Internet
+                        socket.SOCK_DGRAM) # UDP
+    sock.bind((ip, port))
+    return sock
+
+
+def listen(socket):
+    while True:
+        data, addr = socket.recvfrom(1024) # buffer size is 2014 bytes
+        socket.settimeout(10)
+        print(f'thread data: {data}')
+        print(f'thread addr: {addr}')
+        opcode = get_opcode(data)
+
+        if opcode == 'ACK':
+            block = int.from_bytes(data[2:4], byteorder='big')
+            port = socket.getsockname()[1]
+            send_data(block + 1, STATE[port]['filename'], STATE[port]['mode'], socket, addr)
+
 
 def main():
     sock = create_udp_socket()
@@ -65,10 +96,13 @@ def main():
                 # send error packet
                 pass
 
+            port = get_random_port()
             STATE[port] = {'filename': filename, 'mode': mode}
             print(f'state: {STATE}')
-            send_data(1, filename, mode, sock, addr)
 
+            client_socket = create_udp_socket(port=port)
+            send_data(1, filename, mode, client_socket, addr)
+            threading.Thread(target=listen, args=(client_socket,)).start()
 
 
 if __name__ == '__main__':
