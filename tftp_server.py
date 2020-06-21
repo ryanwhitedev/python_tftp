@@ -49,6 +49,18 @@ def get_opcode(bytes):
     return TFTP_OPCODES[opcode]
 
 
+# Return filename and mode from decoded RRQ/WRQ header
+def decode_request_header(data):
+    header = data[2:].split(b'\x00')
+    filename = header[0].decode('utf-8');
+    mode = header[1].decode('utf-8').lower()
+
+    if mode not in TRANSFER_MODES:
+        # send error packet
+        pass
+    return filename, mode
+
+
 # Find a random port between 1025 and 65535 that is not in use
 # by this service
 def get_random_port():
@@ -97,13 +109,7 @@ def main():
 
         opcode = get_opcode(data)
         if opcode == 'RRQ':
-            header = data[2:].split(b'\x00')
-            filename = header[0].decode('utf-8');
-            mode = header[1].decode('utf-8').lower()
-
-            if mode not in TRANSFER_MODES:
-                # send error packet
-                pass
+            filename, mode = decode_request_header(data)
 
             port = get_random_port()
             STATE[port] = {'filename': filename, 'mode': mode}
@@ -112,6 +118,10 @@ def main():
             client_socket = create_udp_socket(port=port)
             send_data(1, filename, mode, client_socket, addr)
             threading.Thread(target=listen, args=(client_socket,)).start()
+        elif opcode == 'WRQ':
+            filename, mode = decode_request_header(data)
+            print(filename)
+            print(mode)
 
 
 if __name__ == '__main__':
