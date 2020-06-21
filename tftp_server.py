@@ -40,6 +40,21 @@ def send_data(block, filename, mode, socket, address):
     socket.sendto(data, address)
 
 
+def send_ack(block, socket, addr):
+    ack = bytearray()
+    #append acknowledgement opcode (04)
+    ack.append(0)
+    ack.append(4)
+
+    # appen block number (2 bytes)
+    b = f'{block:02}'
+    ack.append(int(b[0]))
+    ack.append(int(b[1]))
+
+    print(f'ack: {ack}')
+    socket.sendto(ack, addr)
+
+
 # Get opcode from TFTP header
 def get_opcode(bytes):
     opcode = int.from_bytes(bytes[0:2], byteorder='big')
@@ -120,8 +135,14 @@ def main():
             threading.Thread(target=listen, args=(client_socket,)).start()
         elif opcode == 'WRQ':
             filename, mode = decode_request_header(data)
-            print(filename)
-            print(mode)
+            
+            port = get_random_port()
+            STATE[port] = {'filename': filename, 'mode': mode}
+            print(f'state: {STATE}')
+
+            client_socket = create_udp_socket(port=port)
+            send_ack(0, client_socket, addr)
+            # threading.Thread(target=listen, args=(client_socket,)).start()
 
 
 if __name__ == '__main__':
