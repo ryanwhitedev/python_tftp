@@ -48,6 +48,7 @@ def get_opcode(bytes):
             pass
     return TFTP_OPCODES[opcode]
 
+
 # Find a random port between 1025 and 65535 that is not in use
 # by this service
 def get_random_port():
@@ -65,17 +66,25 @@ def create_udp_socket(ip=UDP_IP, port=UDP_PORT):
 
 
 def listen(socket):
-    while True:
-        data, addr = socket.recvfrom(1024) # buffer size is 2014 bytes
-        socket.settimeout(10)
-        print(f'thread data: {data}')
-        print(f'thread addr: {addr}')
-        opcode = get_opcode(data)
+    try:
+        while True:
+            data, addr = socket.recvfrom(1024) # buffer size is 2014 bytes
+            socket.settimeout(10)
+            print(f'thread data: {data}')
+            print(f'thread addr: {addr}')
 
-        if opcode == 'ACK':
-            block = int.from_bytes(data[2:4], byteorder='big')
             port = socket.getsockname()[1]
-            send_data(block + 1, STATE[port]['filename'], STATE[port]['mode'], socket, addr)
+            opcode = get_opcode(data)
+            if opcode == 'ACK':
+                block = int.from_bytes(data[2:4], byteorder='big')
+                send_data(block + 1, STATE[port]['filename'], STATE[port]['mode'], socket, addr)
+    except:
+        # clean up state
+
+        # close socket and end thread
+        socket.close()
+        return False # returning from the thread's run() method ends the thread
+
 
 
 def main():
