@@ -51,7 +51,6 @@ def send_ack(block, socket, addr):
     ack.append(int(b[0]))
     ack.append(int(b[1]))
 
-    print(f'ack: {ack}')
     socket.sendto(ack, addr)
 
 
@@ -105,9 +104,19 @@ def listen(socket):
             if opcode == 'ACK':
                 block = int.from_bytes(data[2:4], byteorder='big')
                 send_data(block + 1, STATE[port]['filename'], STATE[port]['mode'], socket, addr)
-    except:
-        # clean up state
+            elif opcode == 'DATA':
+                block = int.from_bytes(data[2:4], byteorder='big')
+                content = data[4:]
+                # todo: write data to file
+                send_ack(block, socket, addr)
 
+                if len(content) < 512:
+                    # todo: clean up state
+                    # close socket and end thread
+                    socket.close()
+                    return False
+    except:
+        # todo: clean up state
         # close socket and end thread
         socket.close()
         return False # returning from the thread's run() method ends the thread
@@ -142,7 +151,7 @@ def main():
 
             client_socket = create_udp_socket(port=port)
             send_ack(0, client_socket, addr)
-            # threading.Thread(target=listen, args=(client_socket,)).start()
+            threading.Thread(target=listen, args=(client_socket,)).start()
 
 
 if __name__ == '__main__':
