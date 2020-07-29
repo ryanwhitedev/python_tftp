@@ -97,6 +97,13 @@ def create_udp_socket(ip=UDP_IP, port=UDP_PORT):
     return sock
 
 
+# Remove session and close socket
+def close_connection(sock):
+    port = sock.getsockname()[1]
+    del SESSIONS[port]
+    sock.close()
+
+
 def listen(sock, filename, mode):
     (ip, port) = sock.getsockname()
     session = SESSIONS[port]
@@ -124,19 +131,22 @@ def listen(sock, filename, mode):
                     session['packet'] = packet
                     send_packet(packet, sock, addr)
 
+                    # Close connection once all data has been received and final 
+                    # ACK packet has been sent
                     if len(content) < 512:
                         break
             except socket.timeout:
+                print(session['consec_timeouts'])
                 if session['consec_timeouts'] < MAX_TIMEOUT_RETRIES:
                     session['consec_timeouts'] += 1
                     send_packet(session['packet'], sock, session['addr'])
                 else:
-                    # todo: close connection
-                    pass
+                    break
+        
+        close_connection(sock)
+        return False
     except:
-        # todo: clean up SESSIONS
-        # close socket and end thread
-        sock.close()
+        close_connection(sock) 
         return False # returning from the thread's run() method ends the thread
 
 
