@@ -14,10 +14,10 @@ TFTP_OPCODES = {
     5: 'ERROR'
 }
 TRANSFER_MODES = ['netascii', 'octet', 'mail']
-STATE = dict()
+SESSIONS = dict()
 
 
-def send_data(block, filename, mode, socket, address):
+def create_data_packet(block, filename, mode):
     data = bytearray()
     # append data opcode (03)
     data.append(0)
@@ -36,11 +36,10 @@ def send_data(block, filename, mode, socket, address):
     f.close()
     data += content
 
-    # print(f'data: {data}')
-    socket.sendto(data, address)
+    return data
 
 
-def send_ack(block, socket, addr):
+def create_ack_packet(block):
     ack = bytearray()
     #append acknowledgement opcode (04)
     ack.append(0)
@@ -51,7 +50,11 @@ def send_ack(block, socket, addr):
     ack.append(int(b[0]))
     ack.append(int(b[1]))
 
-    socket.sendto(ack, addr)
+    return ack
+
+
+def send_packet(packet, socket, addr):
+    socket.sendto(packet, addr)
 
 
 # Get opcode from TFTP header
@@ -80,7 +83,7 @@ def decode_request_header(data):
 def get_random_port():
     while True:
         port = random.randint(1025, 65536)
-        if(port not in STATE.keys()):
+        if(port not in SESSIONS.keys()):
             return port
 
 
@@ -91,34 +94,38 @@ def create_udp_socket(ip=UDP_IP, port=UDP_PORT):
     return sock
 
 
-def listen(socket):
+def listen(sock, filename, mode):
+    (ip, port) = sock.getsockname()
+    print(f'listening on port: {port}')
     try:
         while True:
-            data, addr = socket.recvfrom(1024) # buffer size is 2014 bytes
-            socket.settimeout(10)
+            data, addr = sock.recvfrom(1024) # buffer size is 2014 bytes
             print(f'thread data: {data}')
             print(f'thread addr: {addr}')
 
-            port = socket.getsockname()[1]
             opcode = get_opcode(data)
             if opcode == 'ACK':
-                block = int.from_bytes(data[2:4], byteorder='big')
-                send_data(block + 1, STATE[port]['filename'], STATE[port]['mode'], socket, addr)
+                block = int.from_bytes(data[2:4], byteorder='big') + 1 # next block
+                packet = create_data_packet(block, filename, mode)
+                SESSIONS[port]['packet'] = packet
+                send_packet(packet, sock, addr)
             elif opcode == 'DATA':
                 block = int.from_bytes(data[2:4], byteorder='big')
                 content = data[4:]
                 # todo: write data to file
-                send_ack(block, socket, addr)
+                packet = create_ack_packet(block)
+                SESSIONS[port]['packet'] = packet
+                send_packet(packet, sock, addr)
 
                 if len(content) < 512:
-                    # todo: clean up state
+                    # todo: clean up SESSIONS
                     # close socket and end thread
-                    socket.close()
+                    sock.close()
                     return False
     except:
-        # todo: clean up state
+        # todo: clean up SESSIONS
         # close socket and end thread
-        socket.close()
+        sock.close()
         return False # returning from the thread's run() method ends the thread
 
 
@@ -132,26 +139,24 @@ def main():
         print(f'addr: {addr}')
 
         opcode = get_opcode(data)
-        if opcode == 'RRQ':
+        if opcode == 'RRQ' or opcode == 'WRQ':
             filename, mode = decode_request_header(data)
 
-            port = get_random_port()
-            STATE[port] = {'filename': filename, 'mode': mode}
-            print(f'state: {STATE}')
-
-            client_socket = create_udp_socket(port=port)
-            send_data(1, filename, mode, client_socket, addr)
-            threading.Thread(target=listen, args=(client_socket,)).start()
-        elif opcode == 'WRQ':
-            filename, mode = decode_request_header(data)
+            if opcode == 'RRQ':
+                packet = create_data_packet(1, filename, mode)
+            else:
+                packet = create_ack_packet(0)
             
             port = get_random_port()
-            STATE[port] = {'filename': filename, 'mode': mode}
-            print(f'state: {STATE}')
+            SESSIONS[port] = {
+                'client': addr, 
+                'packet': packet,
+                'consec_timeouts': 0
+            }
 
             client_socket = create_udp_socket(port=port)
-            send_ack(0, client_socket, addr)
-            threading.Thread(target=listen, args=(client_socket,)).start()
+            send_packet(packet, client_socket, addr)
+            threading.Thread(target=listen, args=(client_socket, filename, mode)).start()
 
 
 if __name__ == '__main__':
