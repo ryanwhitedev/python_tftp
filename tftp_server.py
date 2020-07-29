@@ -5,6 +5,9 @@ import threading
 UDP_IP = "127.0.0.1"
 UDP_PORT = 69 # TFTP Protocol Port (69)
 
+SOCK_TIMEOUT = 5
+MAX_TIMEOUT_RETRIES = 5
+
 # header opcode is 2 bytes
 TFTP_OPCODES = {
     1: 'RRQ',
@@ -96,32 +99,40 @@ def create_udp_socket(ip=UDP_IP, port=UDP_PORT):
 
 def listen(sock, filename, mode):
     (ip, port) = sock.getsockname()
-    print(f'listening on port: {port}')
+    session = SESSIONS[port]
+
     try:
         while True:
-            data, addr = sock.recvfrom(1024) # buffer size is 2014 bytes
-            print(f'thread data: {data}')
-            print(f'thread addr: {addr}')
+            try:
+                sock.settimeout(SOCK_TIMEOUT)
+                data, addr = sock.recvfrom(1024) # buffer size is 2014 bytes
+                session['consec_timeouts'] = 0
+                print(f'thread data: {data}')
+                print(f'thread addr: {addr}')
 
-            opcode = get_opcode(data)
-            if opcode == 'ACK':
-                block = int.from_bytes(data[2:4], byteorder='big') + 1 # next block
-                packet = create_data_packet(block, filename, mode)
-                SESSIONS[port]['packet'] = packet
-                send_packet(packet, sock, addr)
-            elif opcode == 'DATA':
-                block = int.from_bytes(data[2:4], byteorder='big')
-                content = data[4:]
-                # todo: write data to file
-                packet = create_ack_packet(block)
-                SESSIONS[port]['packet'] = packet
-                send_packet(packet, sock, addr)
+                opcode = get_opcode(data)
+                if opcode == 'ACK':
+                    block = int.from_bytes(data[2:4], byteorder='big') + 1 # next block
+                    packet = create_data_packet(block, filename, mode)
+                    session['packet'] = packet
+                    send_packet(packet, sock, addr)
+                elif opcode == 'DATA':
+                    block = int.from_bytes(data[2:4], byteorder='big')
+                    content = data[4:]
+                    # todo: write data to file
+                    packet = create_ack_packet(block)
+                    session['packet'] = packet
+                    send_packet(packet, sock, addr)
 
-                if len(content) < 512:
-                    # todo: clean up SESSIONS
-                    # close socket and end thread
-                    sock.close()
-                    return False
+                    if len(content) < 512:
+                        break
+            except socket.timeout:
+                if session['consec_timeouts'] < MAX_TIMEOUT_RETRIES:
+                    session['consec_timeouts'] += 1
+                    send_packet(session['packet'], sock, session['addr'])
+                else:
+                    # todo: close connection
+                    pass
     except:
         # todo: clean up SESSIONS
         # close socket and end thread
@@ -149,7 +160,7 @@ def main():
             
             port = get_random_port()
             SESSIONS[port] = {
-                'client': addr, 
+                'addr': addr, 
                 'packet': packet,
                 'consec_timeouts': 0
             }
