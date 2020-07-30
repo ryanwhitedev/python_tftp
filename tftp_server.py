@@ -119,8 +119,14 @@ def listen(sock, filename, mode):
 
                 opcode = get_opcode(data)
                 if opcode == 'ACK':
-                    block = int.from_bytes(data[2:4], byteorder='big') + 1 # next block
-                    packet = create_data_packet(block, filename, mode)
+                    block = int.from_bytes(data[2:4], byteorder='big')
+                    # Check length of the last DATA packet sent, if the Datagram length is 
+                    # less than 516 it is the last packet. Upon receiving the final ACK packet
+                    # from the client we can terminate the connection.
+                    if(len(session['packet']) < 516 and block == int.from_bytes(session['packet'][2:4], byteorder="big")):
+                        break
+
+                    packet = create_data_packet(block + 1, filename, mode)
                     session['packet'] = packet
                     send_packet(packet, sock, addr)
                 elif opcode == 'DATA':
