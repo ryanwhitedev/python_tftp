@@ -7,6 +7,7 @@ UDP_PORT = 69 # TFTP Protocol Port (69)
 
 SOCK_TIMEOUT = 5
 MAX_TIMEOUT_RETRIES = 5
+SESSIONS = dict()
 
 # header opcode is 2 bytes
 TFTP_OPCODES = {
@@ -17,7 +18,16 @@ TFTP_OPCODES = {
     5: 'ERROR'
 }
 TRANSFER_MODES = ['netascii', 'octet', 'mail']
-SESSIONS = dict()
+TFTP_ERRORS = {
+    0: 'Not Defined',
+    1: 'File Not Found',
+    2: 'Access Violation',
+    3: 'Disk Full or Allocation Exceeded',
+    4: 'Illegal TFTP operation',
+    5: 'Unknown Transfer TID',
+    6: 'File Already Exists',
+    7: 'No Such User'
+}
 
 
 def create_data_packet(block, filename, mode):
@@ -44,16 +54,35 @@ def create_data_packet(block, filename, mode):
 
 def create_ack_packet(block):
     ack = bytearray()
-    #append acknowledgement opcode (04)
+    # append acknowledgement opcode (04)
     ack.append(0)
     ack.append(4)
 
-    # appen block number (2 bytes)
+    # append block number (2 bytes)
     b = f'{block:02}'
     ack.append(int(b[0]))
     ack.append(int(b[1]))
 
     return ack
+
+
+def create_error_packet(error_code):
+    err = bytearray()
+    # append error opcode (05)
+    err.append(0)
+    err.append(5)
+
+    # append error code
+    ec = f'{error_code:02}'
+    err.append(int(ec[0]))
+    err.append(int(ec[1]))
+
+    # append error message followed by null terminator
+    msg = bytearray(TFTP_ERRORS[error_code].encode('utf-8'))
+    err += msg
+    err.append(0)
+
+    return err
 
 
 def send_packet(packet, socket, addr):
@@ -127,6 +156,7 @@ def listen(sock, filename, mode):
                         break
 
                     packet = create_data_packet(block + 1, filename, mode)
+                    print(packet)
                     session['packet'] = packet
                     send_packet(packet, sock, addr)
                 elif opcode == 'DATA':
@@ -141,6 +171,11 @@ def listen(sock, filename, mode):
                     # ACK packet has been sent
                     if len(content) < 512:
                         break
+                else:
+                    # Threads only handle incoming packets with ACK/DATA opcodes, send
+                    # 'Illegal TFTP Operation' ERROR packet for any other opcode.
+                    packet = create_error_packet(4)
+                    send_packet(packet, sock, addr)
             except socket.timeout:
                 print(session['consec_timeouts'])
                 if session['consec_timeouts'] < MAX_TIMEOUT_RETRIES:
@@ -172,6 +207,7 @@ def main():
             if opcode == 'RRQ':
                 packet = create_data_packet(1, filename, mode)
             else:
+                # create and write to file
                 packet = create_ack_packet(0)
             
             port = get_random_port()
@@ -184,6 +220,11 @@ def main():
             client_socket = create_udp_socket(port=port)
             send_packet(packet, client_socket, addr)
             threading.Thread(target=listen, args=(client_socket, filename, mode)).start()
+        else:
+            # This socket only handles incoming packets with RRQ or WRQ opcodes, send
+            # 'Illegal TFTP Operation' ERROR packet for any other opcode.
+            packet = create_error_packet(4)
+            send_packet(packet, sock, addr)
 
 
 if __name__ == '__main__':
