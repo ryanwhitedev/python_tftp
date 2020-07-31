@@ -92,8 +92,7 @@ def send_packet(packet, socket, addr):
 def get_opcode(bytes):
     opcode = int.from_bytes(bytes[0:2], byteorder='big')
     if opcode not in TFTP_OPCODES.keys():
-            # send error packet
-            pass
+        return false
     return TFTP_OPCODES[opcode]
 
 
@@ -102,10 +101,6 @@ def decode_request_header(data):
     header = data[2:].split(b'\x00')
     filename = header[0].decode('utf-8');
     mode = header[1].decode('utf-8').lower()
-
-    if mode not in TRANSFER_MODES:
-        # send error packet
-        pass
     return filename, mode
 
 
@@ -211,6 +206,11 @@ def main():
         opcode = get_opcode(data)
         if opcode == 'RRQ' or opcode == 'WRQ':
             filename, mode = decode_request_header(data)
+
+            if mode not in TRANSFER_MODES or mode == 'mail':
+                packet = create_error_packet(0)
+                send_packet(packet)
+                continue
 
             # Check for '/' in filename as a simple check to prevent unwanted
             # file system access, and send 'Access Violation' ERROR packet
