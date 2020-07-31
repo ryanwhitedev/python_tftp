@@ -167,7 +167,9 @@ def listen(sock, filename, mode):
                 elif opcode == 'DATA':
                     block = int.from_bytes(data[2:4], byteorder='big')
                     content = data[4:]
-                    # todo: write data to file
+                    with open(filename, 'ab+') as f:
+                        f.write(content)
+
                     packet = create_ack_packet(block)
                     session['packet'] = packet
                     send_packet(packet, sock, addr)
@@ -175,6 +177,7 @@ def listen(sock, filename, mode):
                     # Close connection once all data has been received and final 
                     # ACK packet has been sent
                     if len(content) < 512:
+                        print('closing connection')
                         break
                 else:
                     # Threads only handle incoming packets with ACK/DATA opcodes, send
@@ -191,7 +194,8 @@ def listen(sock, filename, mode):
         
         close_connection(sock)
         return False
-    except:
+    except Exception as e:
+        print(e)
         close_connection(sock) 
         return False # returning from the thread's run() method ends the thread
 
