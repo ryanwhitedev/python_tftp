@@ -41,11 +41,7 @@ def create_data_packet(block, filename, mode):
     data.append(int(b[1]))
 
     # append data (512 bytes max)
-    f = open(filename, 'rb') # ensure file exists
-    offset = (block - 1) * 512
-    f.seek(offset, 0)
-    content = f.read(512)
-    f.close()
+    content = read_file(block, filename)
     data += content
 
     return data
@@ -86,6 +82,14 @@ def create_error_packet(error_code):
 
 def send_packet(packet, socket, addr):
     socket.sendto(packet, addr)
+
+
+def read_file(block, filename):
+    with open(filename, 'rb') as f:
+        offset = (block - 1) * 512
+        f.seek(offset, 0)
+        content = f.read(512)
+    return content
 
 
 # Get opcode from TFTP header
