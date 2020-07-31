@@ -1,6 +1,4 @@
-import socket
-import random
-import threading
+import os.path, socket, random, threading
 
 UDP_IP = "127.0.0.1"
 UDP_PORT = 69 # TFTP Protocol Port (69)
@@ -8,6 +6,7 @@ UDP_PORT = 69 # TFTP Protocol Port (69)
 SOCK_TIMEOUT = 5
 MAX_TIMEOUT_RETRIES = 5
 SESSIONS = dict()
+FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # header opcode is 2 bytes
 TFTP_OPCODES = {
@@ -213,10 +212,31 @@ def main():
         if opcode == 'RRQ' or opcode == 'WRQ':
             filename, mode = decode_request_header(data)
 
+            # Check for '/' in filename as a simple check to prevent unwanted
+            # file system access, and send 'Access Violation' ERROR packet
+            if '/' in filename:
+                packet = create_error_packet(2)
+                send_packet(packet, sock, addr)
+                continue
+
             if opcode == 'RRQ':
+                # Check if file doesn't exist
+                if not os.path.isfile(f'{FILE_DIR}/{filename}'):
+                    packet = create_error_packet(1)
+                    send_packet(packet, sock, addr)
+                    continue
+
                 packet = create_data_packet(1, filename, mode)
             else:
-                # create and write to file
+                # Create empty file if file doesn't exist, otherwise send ERROR
+                if not os.path.isfile(f'{FILE_DIR}/{filename}'):
+                    with open(filename, 'w+'):
+                        pass
+                else:
+                    packet = create_error_packet(6)
+                    send_packet(packet, sock, addr)
+                    continue
+
                 packet = create_ack_packet(0)
             
             port = get_random_port()
