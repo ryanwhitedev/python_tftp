@@ -146,6 +146,12 @@ def listen(sock, filename, mode):
                 print(f'thread data: {data}')
                 print(f'thread addr: {addr}')
 
+                # Check address (IP, port) matches initial connection address
+                if addr != session['addr']:
+                    packet = create_error_packet(5)
+                    send_packet(packet, socket, addr)
+                    break
+
                 opcode = get_opcode(data)
                 if opcode == 'ACK':
                     block = int.from_bytes(data[2:4], byteorder='big')
@@ -156,7 +162,6 @@ def listen(sock, filename, mode):
                         break
 
                     packet = create_data_packet(block + 1, filename, mode)
-                    print(packet)
                     session['packet'] = packet
                     send_packet(packet, sock, addr)
                 elif opcode == 'DATA':
